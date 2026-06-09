@@ -3,23 +3,40 @@
 const { getUserName } = require('./user-profiles');
 const { getMemoryContext } = require('./memory');
 
+// Common Hebrew and international feminine names
+const FEMININE_NAMES = new Set([
+  'ספיר','נועה','מיכל','תמר','שירה','מאיה','אביגיל','דנה','רוני','יעל',
+  'ליאור','טל','שני','רותם','גל','אור','שקד','הדר','לירן','אילנה',
+  'מרים','רחל','לאה','רבקה','שרה','חנה','דבורה','אסתר','רות','נעמי',
+  'אדר','אלה','אפרת','ארז','בת-אל','בתאל','גאולה','גילה','דליה',
+  'דקלה','הילה','טלי','יפית','כרמית','לימור','מורן','נגה','נטע','ניצן',
+  'עדי','עינב','ענת','פנינה','צופיה','קרן','רונית','ריקי','שוש','שושנה',
+  'שלומית','תהל','תמרה','שרון',
+  'sarah','maya','emma','olivia','sophia','isabella','mia','charlotte',
+  'amelia','harper','evelyn','abigail','emily','ella','elizabeth','camila',
+  'luna','sofia','avery','mila','aria','scarlett','penelope','layla','chloe',
+  'victoria','madison','eleanor','grace','nora','riley','zoey','hannah',
+  'lily','ellie','audrey','hazel','violet','aurora','savannah','natalie',
+  'zoe','jessica','jennifer','ashley','amanda','rachel','rebecca',
+]);
+
+function isFeminine(name) {
+  if (!name) return false;
+  const lower = name.toLowerCase().trim();
+  if (FEMININE_NAMES.has(lower)) return true;
+  return FEMININE_NAMES.has(lower.split(/[\s-]/)[0]);
+}
+
 async function getSystemInstruction(userId, { isGroup = false, isOwner = true, plan = 'admin', isVoiceMessage = false } = {}) {
   const nowDate = new Date();
   const now = nowDate.toLocaleDateString('en-US', {
-    timeZone: 'Asia/Jerusalem',
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+    timeZone: 'Asia/Jerusalem', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   }) + ', ' + nowDate.toLocaleTimeString('en-US', {
-    timeZone: 'Asia/Jerusalem',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
+    timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false,
   });
   const userName = getUserName(userId);
   const nameLine = userName ? `You are talking to ${userName}. Always call them by name naturally.` : '';
-  const genderLine = userName === 'ספיר'
+  const genderLine = isFeminine(userName)
     ? 'When speaking Hebrew to this user, ALWAYS address them in feminine form (לשון נקבה).'
     : 'When speaking Hebrew, ALWAYS address the user in masculine form (לשון זכר).';
 
@@ -34,8 +51,7 @@ Reminders: use create_reminder to schedule proactive WhatsApp messages (תזכו
 Basic plan user. Pro features (Gmail, Calendar, Drive, memory, expenses, messaging to others): suggest /upgrade. Reminders and scheduled notifications are included in Basic.`) : `
 Non-owner. No personal data access. Help with: search, knowledge, images, music.`;
 
-  const groupSection = isGroup ? `
-GROUP CHAT. Messages prefixed with [SenderName]. Be concise, address by name.` : '';
+  const groupSection = isGroup ? `\nGROUP CHAT. Messages prefixed with [SenderName]. Be concise, address by name.` : '';
 
   const voiceSection = isVoiceMessage ? `
 VOICE MESSAGE (active now): The user sent a WhatsApp voice note — you ARE receiving the audio. Listen, understand, and respond to what they said. NEVER say you cannot hear, listen, or process voice messages.` : `

@@ -23,9 +23,7 @@ function maskedJid(jid) {
 
 function normalizePhoneNumber(phone) {
   let n = String(phone).replace(/^\+/, '').replace(/[\s\-()]/g, '');
-  if (n.startsWith('0') && n.length === 10) {
-    n = '972' + n.substring(1);
-  }
+  if (n.startsWith('0') && n.length === 10) n = '972' + n.substring(1);
   return n;
 }
 
@@ -46,12 +44,34 @@ async function sendText(to, body) {
   await sock.sendMessage(jid, { text: body });
 }
 
+/**
+ * Show a "typing..." indicator while Rio is processing.
+ * Returns a stopTyping() function — call it when done.
+ * Never throws — typing indicator is best-effort.
+ */
+async function sendTyping(to, stopAfterMs = 30_000) {
+  const sock = getSocket();
+  if (!sock) return async () => {};
+  const jid = toJid(to);
+  try { await sock.sendPresenceUpdate('composing', jid); } catch { /* ignore */ }
+  let stopped = false;
+  const stopTimer = setTimeout(async () => {
+    if (stopped) return;
+    stopped = true;
+    try { await sock.sendPresenceUpdate('paused', jid); } catch { /* ignore */ }
+  }, stopAfterMs);
+  return async function stopTyping() {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(stopTimer);
+    try { await sock.sendPresenceUpdate('paused', jid); } catch { /* ignore */ }
+  };
+}
+
 async function markRead(msgKey) {
   const sock = getSocket();
   if (!sock) return;
-  try {
-    await sock.readMessages([msgKey]);
-  } catch { /* ignore */ }
+  try { await sock.readMessages([msgKey]); } catch { /* ignore */ }
 }
 
 async function downloadMedia(baileysMsg) {
@@ -77,11 +97,7 @@ async function sendAudio(to, media) {
   if (!sock) throw new Error('WhatsApp not connected');
   const jid = toJid(to);
   console.log(`[whatsapp] Sending audio to ${maskedJid(jid)}`);
-  await sock.sendMessage(jid, {
-    audio: media.buffer,
-    ptt: true,
-    mimetype: 'audio/ogg; codecs=opus',
-  });
+  await sock.sendMessage(jid, { audio: media.buffer, ptt: true, mimetype: 'audio/ogg; codecs=opus' });
 }
 
 async function sendImage(to, media, caption) {
@@ -89,11 +105,7 @@ async function sendImage(to, media, caption) {
   if (!sock) throw new Error('WhatsApp not connected');
   const jid = toJid(to);
   console.log(`[whatsapp] Sending image to ${maskedJid(jid)}`);
-  await sock.sendMessage(jid, {
-    image: media.buffer,
-    caption: caption || '',
-    mimetype: media.mimeType || 'image/png',
-  });
+  await sock.sendMessage(jid, { image: media.buffer, caption: caption || '', mimetype: media.mimeType || 'image/png' });
 }
 
 async function sendSticker(to, media) {
@@ -109,12 +121,7 @@ async function sendDocument(to, media, filename, caption) {
   if (!sock) throw new Error('WhatsApp not connected');
   const jid = toJid(to);
   console.log(`[whatsapp] Sending document to ${maskedJid(jid)}: ${filename}`);
-  await sock.sendMessage(jid, {
-    document: media.buffer,
-    fileName: filename || 'file',
-    caption: caption || '',
-    mimetype: media.mimeType || 'application/octet-stream',
-  });
+  await sock.sendMessage(jid, { document: media.buffer, fileName: filename || 'file', caption: caption || '', mimetype: media.mimeType || 'application/octet-stream' });
 }
 
 async function sendVideo(to, media, filename) {
@@ -122,29 +129,16 @@ async function sendVideo(to, media, filename) {
   if (!sock) throw new Error('WhatsApp not connected');
   const jid = toJid(to);
   console.log(`[whatsapp] Sending video to ${maskedJid(jid)}`);
-  await sock.sendMessage(jid, {
-    video: media.buffer,
-    fileName: filename || 'video.mp4',
-    mimetype: media.mimeType || 'video/mp4',
-  });
+  await sock.sendMessage(jid, { video: media.buffer, fileName: filename || 'video.mp4', mimetype: media.mimeType || 'video/mp4' });
 }
 
 async function sendMessageToNumber(phoneNumber, text) {
-  const normalized = normalizePhoneNumber(phoneNumber);
-  return sendText(normalized, text);
+  return sendText(normalizePhoneNumber(phoneNumber), text);
 }
 
-async function sendGroupMessage(groupId, text) {
-  return sendText(groupId, text);
-}
-
-async function sendGroupImage(groupId, media, caption) {
-  return sendImage(groupId, media, caption);
-}
-
-async function sendGroupAudio(groupId, media) {
-  return sendAudio(groupId, media);
-}
+async function sendGroupMessage(groupId, text) { return sendText(groupId, text); }
+async function sendGroupImage(groupId, media, caption) { return sendImage(groupId, media, caption); }
+async function sendGroupAudio(groupId, media) { return sendAudio(groupId, media); }
 
 function fetchRioPhoneNumber() {
   const num = process.env.RIO_PHONE_NUMBER || process.env.RIO_WHATSAPP_NUMBER || '';
@@ -152,22 +146,9 @@ function fetchRioPhoneNumber() {
 }
 
 module.exports = {
-  normalizePhoneNumber,
-  formatPhoneForDisplay,
-  toJid,
-  fromJid,
-  sendText,
-  markRead,
-  downloadMedia,
-  uploadMedia,
-  sendAudio,
-  sendImage,
-  sendSticker,
-  sendDocument,
-  sendVideo,
-  sendMessageToNumber,
-  sendGroupMessage,
-  sendGroupImage,
-  sendGroupAudio,
+  normalizePhoneNumber, formatPhoneForDisplay, toJid, fromJid,
+  sendText, sendTyping, markRead, downloadMedia, uploadMedia,
+  sendAudio, sendImage, sendSticker, sendDocument, sendVideo,
+  sendMessageToNumber, sendGroupMessage, sendGroupImage, sendGroupAudio,
   fetchRioPhoneNumber,
 };

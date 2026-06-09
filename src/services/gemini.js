@@ -2,7 +2,7 @@
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
-const { addToHistory, getHistory } = require('./session');
+const { addToHistory, getHistory, ensureLoaded } = require('./session');
 const { getFilteredDeclarations, executeTool } = require('./tools');
 const { getSystemInstruction } = require('./system-prompt');
 const { isAllowed } = require('../middleware/whitelist');
@@ -10,6 +10,7 @@ const { isAllowed } = require('../middleware/whitelist');
 const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const MAX_TOOL_ROUNDS = 5;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 const CALENDAR_INTENT = /יומן|calendar|פגישה|meeting|אירוע|event|תור|appointment|לוז|schedule|קבע|תקבע|תזמן|תוסיף ליומן|בטל|ביטול|מחק|הסר|cancel/i;
 const CALENDAR_CANCEL_INTENT = /בטל|ביטול|מחק|הסר|cancel|delete|remove/i;
@@ -20,11 +21,6 @@ const CALENDAR_ACTION_TOOLS = new Set([
   'list_calendar_events',
 ]);
 
-/**
- * Convert any value to a protobuf-Struct-safe object.
- * Gemini's functionResponse.response MUST be a plain object with only
- * string/number/boolean/null values, arrays, or nested objects.
- */
 function toSafeStruct(value) {
   try {
     const cleaned = JSON.parse(JSON.stringify(value));
@@ -36,9 +32,6 @@ function toSafeStruct(value) {
   }
 }
 
-/**
- * Retry a Gemini SDK call on transient errors (503, 429).
- */
 async function sendWithRetry(fn, maxRetries = 3) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -53,11 +46,6 @@ async function sendWithRetry(fn, maxRetries = 3) {
   }
 }
 
-/**
- * Gemini SDK's response.text() throws GoogleGenerativeAIResponseError when the
- * candidate is blocked (safety, recitation, etc.) or text is unavailable — that
- * used to bubble to routeMessage as a generic "something went wrong".
- */
 function extractReplyText(response) {
   try {
     return response.text();
@@ -75,11 +63,8 @@ function extractReplyText(response) {
 }
 
 let genai = null;
-
 function getGenAI() {
-  if (!genai) {
-    genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  }
+  if (!genai) genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   return genai;
 }
 
@@ -95,18 +80,20 @@ async function getModel(userId, opts = {}) {
   const messageText = opts.messageText || '';
   const sysInstruction = await getSystemInstruction(userId, opts);
   const tools = getTools(isOwner, plan, messageText);
-  const config = {
-    model: 'gemini-2.5-flash',
-    systemInstruction: sysInstruction,
-  };
+  const config = { model: GEMINI_MODEL, systemInstruction: sysInstruction };
   if (tools) config.tools = tools;
   return getGenAI().getGenerativeModel(config);
 }
 
 const MAX_CHAT_TURNS = 10;
 
-function buildChatHistory(userId) {
-  const all = getHistory(userId)
+/**
+ * Load history from Firestore if not yet hydrated (e.g. after Cloud Run restart),
+ * then return the last N turns for the chat context.
+ */
+async function buildChatHistory(sessionKey) {
+  const session = await ensureLoaded(sessionKey);
+  const all = session.history
     .filter((entry) => entry.parts.some((p) => p.text !== undefined))
     .map((entry) => ({
       role: entry.role,
@@ -116,10 +103,32 @@ function buildChatHistory(userId) {
 }
 
 /**
- * Core chat loop that handles function calling.
- * Sends a message, checks if Gemini wants to call tools, executes them,
- * feeds results back, and repeats until Gemini returns a text response.
+ * Execute one round of tool calls. Extracted to avoid duplicating
+ * the loop body for the calendar nudge path.
  */
+async function runToolRound(chat, functionCalls, userId, opts, mediaQueue, toolsCalled) {
+  const functionResponses = [];
+  for (const part of functionCalls) {
+    const { name, args } = part.functionCall;
+    toolsCalled.add(name);
+    let toolResult;
+    try {
+      toolResult = await executeTool(name, args || {}, userId, { plan: opts.plan });
+    } catch (err) {
+      console.error(`[tools] Error in ${name}:`, err.message);
+      toolResult = { error: err.message };
+    }
+    if (toolResult?._media) {
+      mediaQueue.push(toolResult._media);
+      const { _media, ...rest } = toolResult;
+      toolResult = rest;
+    }
+    functionResponses.push({ functionResponse: { name, response: toSafeStruct(toolResult) } });
+  }
+  const result = await sendWithRetry(() => chat.sendMessage(functionResponses));
+  return result.response;
+}
+
 async function chatWithTools(chat, inputParts, userId, opts = {}) {
   const mediaQueue = [];
   const toolsCalled = new Set();
@@ -128,49 +137,17 @@ async function chatWithTools(chat, inputParts, userId, opts = {}) {
   let response = result.response;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const candidate = response.candidates?.[0];
-    const parts = candidate?.content?.parts || [];
-
+    const parts = response.candidates?.[0]?.content?.parts || [];
     const functionCalls = parts.filter((p) => p.functionCall);
     if (functionCalls.length === 0) break;
-
-    const functionResponses = [];
-    for (const part of functionCalls) {
-      const { name, args } = part.functionCall;
-      toolsCalled.add(name);
-      let toolResult;
-      try {
-        toolResult = await executeTool(name, args || {}, userId, { plan: opts.plan });
-      } catch (err) {
-        console.error(`[tools] Error in ${name}:`, err.message);
-        toolResult = { error: err.message };
-      }
-      // Collect media results for the handler to send separately
-      if (toolResult?._media) {
-        mediaQueue.push(toolResult._media);
-        const { _media, ...rest } = toolResult;
-        toolResult = rest;
-      }
-      // Serialize to plain JSON to avoid protobuf Struct issues with nested/complex types
-      const safeResult = toSafeStruct(toolResult);
-
-      functionResponses.push({
-        functionResponse: {
-          name,
-          response: safeResult,
-        },
-      });
-    }
-
-    result = await sendWithRetry(() => chat.sendMessage(functionResponses));
-    response = result.response;
+    response = await runToolRound(chat, functionCalls, userId, opts, mediaQueue, toolsCalled);
   }
 
-  // Model often replies "קבעתי פגישה" without calling create_calendar_event — force one retry
+  // If model skipped the calendar tool despite clear intent, nudge once
   const wantsCalendarAction = CALENDAR_INTENT.test(userText);
-  const wantsCancel = CALENDAR_CANCEL_INTENT.test(userText);
   const usedCalendarTool = [...toolsCalled].some((t) => CALENDAR_ACTION_TOOLS.has(t));
   if (wantsCalendarAction && !usedCalendarTool) {
+    const wantsCancel = CALENDAR_CANCEL_INTENT.test(userText);
     console.warn('[gemini] Calendar intent but no calendar tool called — nudging model');
     const nudge = wantsCancel
       ? '[System] The user asked to cancel/delete a meeting. Call list_calendar_events if needed, then delete_calendar_event with search (title) or event_id. Do not say it was cancelled until the tool returns status cancelled.'
@@ -181,28 +158,7 @@ async function chatWithTools(chat, inputParts, userId, opts = {}) {
       const parts = response.candidates?.[0]?.content?.parts || [];
       const functionCalls = parts.filter((p) => p.functionCall);
       if (functionCalls.length === 0) break;
-      const functionResponses = [];
-      for (const part of functionCalls) {
-        const { name, args } = part.functionCall;
-        toolsCalled.add(name);
-        let toolResult;
-        try {
-          toolResult = await executeTool(name, args || {}, userId, { plan: opts.plan });
-        } catch (err) {
-          console.error(`[tools] Error in ${name}:`, err.message);
-          toolResult = { error: err.message };
-        }
-        if (toolResult?._media) {
-          mediaQueue.push(toolResult._media);
-          const { _media, ...rest } = toolResult;
-          toolResult = rest;
-        }
-        functionResponses.push({
-          functionResponse: { name, response: toSafeStruct(toolResult) },
-        });
-      }
-      result = await sendWithRetry(() => chat.sendMessage(functionResponses));
-      response = result.response;
+      response = await runToolRound(chat, functionCalls, userId, opts, mediaQueue, toolsCalled);
     }
   }
 
@@ -212,19 +168,17 @@ async function chatWithTools(chat, inputParts, userId, opts = {}) {
 async function handleText(userId, text, opts = {}) {
   const t0 = Date.now();
   const sessionKey = opts.sessionKey || userId;
-  const history = buildChatHistory(sessionKey);
+  const history = await buildChatHistory(sessionKey);
   const t_hist = Date.now();
   const modelOpts = { ...opts, messageText: text };
   const model = await getModel(userId, modelOpts);
   const t1 = Date.now();
   const chat = model.startChat({ history });
-
   const plan = opts.plan || 'admin';
   addToHistory(sessionKey, 'user', [{ text }]);
   const { text: reply, media } = await chatWithTools(chat, text, userId, { plan });
   const t2 = Date.now();
   addToHistory(sessionKey, 'model', [{ text: reply }]);
-
   const isOwner = opts.isOwner !== undefined ? opts.isOwner : isAllowed(userId);
   const toolCount = getFilteredDeclarations(isOwner, plan, text).length;
   console.log(`[perf] tools=${toolCount} hist=${t_hist - t0}ms setup=${t1 - t_hist}ms gemini=${t2 - t1}ms total=${t2 - t0}ms`);
@@ -233,22 +187,12 @@ async function handleText(userId, text, opts = {}) {
 
 async function handleImage(userId, imageBuffer, mimeType, caption, opts = {}) {
   const sessionKey = opts.sessionKey || userId;
-  const history = buildChatHistory(sessionKey);
+  const history = await buildChatHistory(sessionKey);
   const modelOpts = { ...opts, messageText: caption || '' };
   const model = await getModel(userId, modelOpts);
   const chat = model.startChat({ history });
-
   const prompt = caption || 'What do you see in this image? Describe it helpfully.';
-  const parts = [
-    {
-      inlineData: {
-        data: imageBuffer.toString('base64'),
-        mimeType,
-      },
-    },
-    { text: prompt },
-  ];
-
+  const parts = [{ inlineData: { data: imageBuffer.toString('base64'), mimeType } }, { text: prompt }];
   const plan = opts.plan || 'admin';
   addToHistory(sessionKey, 'user', [{ text: `[Image] ${prompt}` }]);
   const { text: reply, media } = await chatWithTools(chat, parts, userId, { plan });
@@ -273,38 +217,22 @@ function isVoiceCapabilityDenial(text) {
 
 async function handleAudioToText(userId, audioBuffer, mimeType, opts = {}) {
   const sessionKey = opts.sessionKey || userId;
-  const history = buildChatHistory(sessionKey);
+  const history = await buildChatHistory(sessionKey);
   const voiceOpts = { ...opts, isVoiceMessage: true, messageText: '[Voice message]' };
   const model = await getModel(userId, voiceOpts);
   const chat = model.startChat({ history });
-
   const parts = [
-    {
-      inlineData: {
-        data: audioBuffer.toString('base64'),
-        mimeType: mimeType || 'audio/ogg; codecs=opus',
-      },
-    },
-    {
-      text:
-        'This is a WhatsApp voice message from the user. You CAN hear it — listen carefully, understand the content (Hebrew or English), and respond helpfully to what they said. Do NOT say you cannot listen to voice messages.',
-    },
+    { inlineData: { data: audioBuffer.toString('base64'), mimeType: mimeType || 'audio/ogg; codecs=opus' } },
+    { text: 'This is a WhatsApp voice message from the user. You CAN hear it — listen carefully, understand the content (Hebrew or English), and respond helpfully to what they said. Do NOT say you cannot listen to voice messages.' },
   ];
-
   const plan = opts.plan || 'admin';
   addToHistory(sessionKey, 'user', [{ text: '[Voice message]' }]);
   let { text: reply } = await chatWithTools(chat, parts, userId, { plan });
-
   if (isVoiceCapabilityDenial(reply)) {
     console.warn('[audio] Model denied voice capability — retrying with strict instruction');
-    const retry = await sendWithRetry(() =>
-      chat.sendMessage(
-        'You already received the voice audio above. Transcribe what the user said and answer their request. You MUST NOT claim you cannot hear or process voice messages.'
-      )
-    );
+    const retry = await sendWithRetry(() => chat.sendMessage('You already received the voice audio above. Transcribe what the user said and answer their request. You MUST NOT claim you cannot hear or process voice messages.'));
     reply = extractReplyText(retry.response);
   }
-
   addToHistory(sessionKey, 'model', [{ text: reply }]);
   return reply;
 }
@@ -318,28 +246,19 @@ async function handleAudioToAudio(userId, audioBuffer, mimeType, opts = {}) {
 async function textToSpeech(text) {
   const apiKey = process.env.GEMINI_API_KEY;
   const url = `${GEMINI_API_BASE}/models/${TTS_MODEL}:generateContent`;
-
   const response = await axios.post(
     url,
     {
       contents: [{ role: 'user', parts: [{ text }] }],
       generationConfig: {
         response_modalities: ['AUDIO'],
-        speech_config: {
-          voice_config: {
-            prebuilt_voice_config: { voice_name: 'Orus' },
-          },
-        },
+        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: 'Orus' } } },
       },
     },
     { headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, timeout: 60_000 }
   );
-
   const candidate = response.data.candidates?.[0];
-  const audioPart = candidate?.content?.parts?.find(
-    (p) => p.inlineData || p.inline_data
-  );
-
+  const audioPart = candidate?.content?.parts?.find((p) => p.inlineData || p.inline_data);
   if (!audioPart) throw new Error('TTS model did not return audio');
   return (audioPart.inlineData || audioPart.inline_data).data;
 }
