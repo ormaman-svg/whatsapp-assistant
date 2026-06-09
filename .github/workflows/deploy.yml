@@ -1,0 +1,30 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: whatsapp-assistant
+          region: me-west1
+          source: .
+          flags: |
+            --min-instances=1
+            --max-instances=1
+            --memory=2Gi
+            --cpu=1
+            --timeout=300
+            --port=3000
+            --allow-unauthenticated
