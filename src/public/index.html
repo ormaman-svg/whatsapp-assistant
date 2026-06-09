@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rio — הסוכן האישי שלך בוואטסאפ</title>
+  <meta name="description" content="Rio הוא סוכן AI חכם שחי בתוך הוואטסאפ שלך. הוא יודע לחפש, ליצור, לנהל יומן, לקרוא מיילים, לזכור אותך ולעזור בכל דבר — בלי להתקין שום דבר.">
+  <link rel="icon" type="image/png" href="/rio-favicon.png">
+  <meta property="og:title" content="Rio — הסוכן האישי שלך בוואטסאפ">
+  <meta property="og:description" content="סוכן AI חכם ישירות בוואטסאפ. שאלות, חיפוש, תמונות, מוזיקה, יומן, מיילים ועוד.">
+  <meta property="og:image" content="/rio-logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;800;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #fafafa; --card: #ffffff; --text: #111827; --muted: #6b7280;
+      --accent: #25D366; --accent-dark: #1da851;
+      --pro: #7c3aed; --pro-dark: #6d28d9;
+      --border: #e5e7eb; --radius: 20px;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Heebo', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; -webkit-font-smoothing: antialiased; }
+
+    /* ── Hero ── */
+    .hero {
+      position: relative; text-align: center; padding: 100px 24px 80px; overflow: hidden;
+      background: linear-gradient(160deg, #0a0f1a 0%, #111827 40%, #1e293b 100%); color: #fff;
+    }
+    .hero::before {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(circle at 30% 20%, rgba(37,211,102,.12) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 80%, rgba(124,58,237,.1) 0%, transparent 50%);
+    }
+    .hero > * { position: relative; }
+    .hero-badge {
+      display: inline-block; padding: 6px 18px; border-radius: 100px; font-size: .85em; font-weight: 600;
+      background: rgba(37,211,102,.15); color: var(--accent); margin-bottom: 24px; border: 1px solid rgba(37,211,102,.25);
+    }
+    .hero h1 { font-size: clamp(2.4em, 6vw, 4em); font-weight: 900; margin-bottom: 16px; letter-spacing: -1.5px; line-height: 1.15; }
+    .hero h1 span { background: linear-gradient(135deg, var(--accent), #4ade80); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .hero .subtitle { font-size: clamp(1.1em, 2.5vw, 1.35em); color: #94a3b8; max-width: 620px; margin: 0 auto 40px; line-height: 1.7; }
+    .hero-cta {
+      display: inline-flex; align-items: center; gap: 10px; padding: 18px 44px;
+      background: var(--accent); color: #fff; border-radius: 14px; text-decoration: none;
+      font-weight: 800; font-size: 1.15em; transition: all .25s; box-shadow: 0 4px 24px rgba(37,211,102,.3);
+    }
+    .hero-cta:hover { background: var(--accent-dark); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(37,211,102,.4); }
+    .hero-cta svg { width: 22px; height: 22px; fill: currentColor; }
+    .hero-sub { margin-top: 16px; color: #64748b; font-size: .9em; }
+
+    /* ── Chat demo ── */
+    .chat-demo {
+      max-width: 380px; margin: 48px auto 0; border-radius: 20px; overflow: hidden;
+      background: #e5ddd5; box-shadow: 0 12px 48px rgba(0,0,0,.3); text-align: right;
+    }
+    .chat-header {
+      background: #075e54; color: #fff; padding: 14px 16px; display: flex; align-items: center; gap: 10px;
+    }
+    .chat-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: .9em; color: #fff; }
+    .chat-name { font-weight: 700; font-size: .95em; }
+    .chat-status { font-size: .75em; color: #b0d4cf; }
+    .chat-body { padding: 16px 12px; display: flex; flex-direction: column; gap: 6px; min-height: 180px; }
+    .msg {
+      max-width: 80%; padding: 8px 12px; border-radius: 10px; font-size: .9em; line-height: 1.5;
+      color: #111; animation: msgIn .4s ease-out both;
+    }
+    .msg-user { background: #dcf8c6; align-self: flex-end; border-bottom-left-radius: 10px; border-bottom-right-radius: 2px; }
+    .msg-rio { background: #fff; align-self: flex-start; border-bottom-right-radius: 10px; border-bottom-left-radius: 2px; }
+    .msg:nth-child(1) { animation-delay: .3s; }
+    .msg:nth-child(2) { animation-delay: 1s; }
+    .msg:nth-child(3) { animation-delay: 1.8s; }
+    @keyframes msgIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+    /* ── How it works ── */
+    .how {
+      max-width: 800px; margin: 80px auto; padding: 0 24px; text-align: center;
+    }
+    .how h2 { font-size: 2em; font-weight: 800; margin-bottom: 12px; }
+    .how .sub { color: var(--muted); margin-bottom: 48px; font-size: 1.1em; }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
+    @media (max-width: 600px) { .steps { grid-template-columns: 1fr; gap: 24px; } }
+    .step { text-align: center; }
+    .step-num {
+      width: 52px; height: 52px; border-radius: 16px; display: inline-flex; align-items: center; justify-content: center;
+      font-size: 1.3em; font-weight: 800; margin-bottom: 16px;
+      background: linear-gradient(135deg, var(--accent), #4ade80); color: #fff;
+    }
+    .step h3 { font-size: 1.1em; margin-bottom: 6px; }
+    .step p { color: var(--muted); font-size: .92em; }
+
+    /* ── Features ── */
+    .features { max-width: 1000px; margin: 0 auto 80px; padding: 0 24px; }
+    .features h2 { font-size: 2em; font-weight: 800; text-align: center; margin-bottom: 12px; }
+    .features .sub { text-align: center; color: var(--muted); margin-bottom: 48px; font-size: 1.1em; }
+    .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+    .feature-card {
+      background: var(--card); border-radius: var(--radius); padding: 28px 24px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.04); border: 1px solid var(--border);
+      transition: transform .2s, box-shadow .2s;
+    }
+    .feature-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,.08); }
+    .feature-icon { font-size: 1.6em; margin-bottom: 12px; }
+    .feature-card h3 { font-size: 1.05em; margin-bottom: 6px; font-weight: 700; }
+    .feature-card p { font-size: .9em; color: var(--muted); line-height: 1.6; }
+
+    /* ── Pricing ── */
+    .pricing { max-width: 860px; margin: 0 auto 80px; padding: 0 24px; text-align: center; }
+    .pricing h2 { font-size: 2em; font-weight: 800; margin-bottom: 8px; }
+    .pricing .sub { color: var(--muted); margin-bottom: 40px; font-size: 1.1em; }
+    .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 640px) { .plans { grid-template-columns: 1fr; } }
+
+    .plan {
+      background: var(--card); border-radius: var(--radius); padding: 36px 28px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.05); text-align: right; position: relative;
+      border: 2px solid var(--border); transition: transform .2s;
+    }
+    .plan:hover { transform: translateY(-4px); }
+    .plan.featured { border-color: var(--pro); box-shadow: 0 4px 24px rgba(124,58,237,.12); }
+    .plan-badge {
+      position: absolute; top: -13px; right: 24px; background: var(--pro); color: #fff;
+      padding: 5px 18px; border-radius: 100px; font-size: .8em; font-weight: 700;
+    }
+    .plan h3 { font-size: 1.5em; margin-bottom: 4px; }
+    .plan .price { font-size: 2.4em; font-weight: 900; margin: 8px 0 4px; }
+    .plan .price small { font-size: .38em; color: var(--muted); font-weight: 400; }
+    .plan .price-note { font-size: .85em; color: var(--accent); font-weight: 600; margin-bottom: 16px; }
+    .plan ul { list-style: none; margin: 20px 0 24px; }
+    .plan ul li { padding: 7px 0; font-size: .95em; display: flex; align-items: center; gap: 8px; }
+    .plan ul li .check { color: var(--accent); font-weight: 700; flex-shrink: 0; }
+    .plan ul li.disabled { color: #bbb; }
+    .plan ul li.disabled .check { color: #ddd; }
+    .plan-btn {
+      display: block; width: 100%; padding: 16px; border: none; border-radius: 14px;
+      font-size: 1.05em; font-weight: 700; cursor: pointer; transition: all .2s;
+      text-decoration: none; text-align: center;
+    }
+    .plan-btn.basic { background: #f1f5f9; color: var(--text); }
+    .plan-btn.basic:hover { background: #e2e8f0; }
+    .plan-btn.pro { background: var(--pro); color: #fff; }
+    .plan-btn.pro:hover { background: var(--pro-dark); }
+
+    /* ── Intro (Rio speaks) ── */
+    .intro {
+      max-width: 700px; margin: 0 auto 80px; padding: 0 24px; text-align: center;
+    }
+    .intro-card {
+      background: var(--card); border-radius: var(--radius); padding: 40px 32px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.05); border: 1px solid var(--border);
+    }
+    .intro-card .rio-avatar {
+      width: 64px; height: 64px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+      font-size: 1.8em; font-weight: 900; margin-bottom: 16px;
+      background: linear-gradient(135deg, var(--accent), #4ade80); color: #fff;
+    }
+    .intro-card h3 { font-size: 1.3em; margin-bottom: 12px; }
+    .intro-card p { color: var(--muted); font-size: 1em; line-height: 1.8; max-width: 500px; margin: 0 auto; }
+
+    /* ── FAQ ── */
+    .faq { max-width: 700px; margin: 0 auto; padding: 0 24px 80px; }
+    .faq h2 { font-size: 1.8em; font-weight: 800; text-align: center; margin-bottom: 32px; }
+    .faq-item { border-bottom: 1px solid var(--border); padding: 18px 0; }
+    .faq-item summary { font-weight: 600; cursor: pointer; list-style: none; font-size: 1.05em; }
+    .faq-item summary::-webkit-details-marker { display: none; }
+    .faq-item p { color: var(--muted); margin-top: 10px; font-size: .95em; line-height: 1.7; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center; padding: 32px 24px; color: var(--muted); font-size: .85em;
+      border-top: 1px solid var(--border); background: #fff;
+    }
+    footer a { color: var(--muted); text-decoration: none; }
+    footer a:hover { color: var(--text); }
+
+    /* ── CTA banner ── */
+    .cta-banner {
+      text-align: center; padding: 64px 24px;
+      background: linear-gradient(160deg, #0a0f1a, #111827); color: #fff;
+    }
+    .cta-banner h2 { font-size: 1.8em; font-weight: 800; margin-bottom: 12px; }
+    .cta-banner p { color: #94a3b8; margin-bottom: 32px; font-size: 1.1em; }
+  </style>
+</head>
+<body>
+
+<!-- ── Hero ── -->
+<section class="hero">
+  <div class="hero-badge">זמין עכשיו &middot; גישה מיידית</div>
+  <h1>הכירו את <span>Rio</span></h1>
+  <p class="subtitle">הסוכן האישי שלכם — ישירות בוואטסאפ.<br>אני יודע לחפש, ליצור, לנהל, לזכור ולעזור בכל דבר. בלי אפליקציות. בלי הרשמות מסובכות. פשוט שלחו לי הודעה.</p>
+  <a href="#pricing" class="hero-cta" id="hero-cta">
+    <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+    דברו איתי בוואטסאפ
+  </a>
+  <div class="hero-sub">חינם לתקופה מוגבלת &middot; ללא כרטיס אשראי</div>
+
+  <div class="chat-demo">
+    <div class="chat-header">
+      <div class="chat-avatar">R</div>
+      <div>
+        <div class="chat-name">Rio</div>
+        <div class="chat-status">מקליד...</div>
+      </div>
+    </div>
+    <div class="chat-body">
+      <div class="msg msg-user">מה יש לי ביומן מחר?</div>
+      <div class="msg msg-rio">מחר יש לך 3 פגישות: סטנדאפ ב-9:00, שיחה עם לקוח ב-11:00, וארוחת צהריים עם דני ב-13:00. רוצה שאזכיר לך משהו?</div>
+      <div class="msg msg-user">תזכיר לי להביא מסמכים לפגישה עם הלקוח</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── How it works ── -->
+<section class="how">
+  <h2>איך זה עובד?</h2>
+  <p class="sub">שלושה צעדים ומתחילים. ברצינות, זה הכל.</p>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <h3>לחצו על הכפתור</h3>
+      <p>נפתחת שיחה חדשה עם Rio ישירות בוואטסאפ שלכם</p>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <h3>שלחו הודעה</h3>
+      <p>כתבו, דברו, או שלחו תמונה — Rio מבין הכל</p>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <h3>קבלו מענה מיידי</h3>
+      <p>תשובות חכמות, יצירת תוכן, ניהול יומן ועוד — בשניות</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Rio introduces himself ── -->
+<section class="intro">
+  <div class="intro-card">
+    <div class="rio-avatar">R</div>
+    <h3>שלום, אני Rio</h3>
+    <p>אני הסוכן האישי שלכם בוואטסאפ. אני יודע לענות על שאלות, לחפש מידע בזמן אמת, ליצור תמונות ומוזיקה, לנהל את היומן והמיילים שלכם, לזכור דברים שחשובים לכם, ולעזור כמעט בכל דבר. אני זמין 24/7, מדבר עברית ואנגלית, ואני פה בשבילכם.</p>
+  </div>
+</section>
+
+<!-- ── Features ── -->
+<section class="features">
+  <h2>מה אני יודע לעשות?</h2>
+  <p class="sub">הנה חלק מהיכולות שלי. ויש עוד.</p>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">💬</div>
+      <h3>שיחה חכמה בטקסט וקול</h3>
+      <p>שאלו כל שאלה — אני עונה בטקסט, הודעה קולית או תמונה. עברית ואנגלית, כמה שתרצו.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔍</div>
+      <h3>חיפוש מידע בזמן אמת</h3>
+      <p>מזג אוויר, חדשות, מניות, ספורט, מחירים — אני מחפש ומביא תשובות עדכניות.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎨</div>
+      <h3>יצירת תמונות ומוזיקה</h3>
+      <p>תארו מה אתם רוצים ואני אצור תמונה, סטיקר, עריכת תמונה, או קטע מוזיקלי.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📅</div>
+      <h3>Gmail, יומן ו-Google Drive</h3>
+      <p>אני קורא מיילים, יוצר פגישות, מוריד קבצים מ-Drive — הכל מתוך הצ'אט.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🧠</div>
+      <h3>זיכרון אישי</h3>
+      <p>אני זוכר דברים שחשובים לכם — כתובת, העדפות, שמות. לא תצטרכו לחזור על עצמכם.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⏰</div>
+      <h3>תזכורות והודעות מתוזמנות</h3>
+      <p>תגידו לי מתי להזכיר ואני אדאג. גם הודעות לאנשים אחרים בזמן שתבחרו.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">💰</div>
+      <h3>מעקב הוצאות</h3>
+      <p>תגידו "הוצאתי 200 שח על קניות" ואני אשמור. בסוף החודש — סיכום מפורט.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📝</div>
+      <h3>רשימות וניהול משימות</h3>
+      <p>רשימת קניות, משימות, רעיונות — אני שומר ומנהל הכל. תשאלו "מה ברשימה?" ואני שם.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📍</div>
+      <h3>מפות וניווט</h3>
+      <p>חיפוש מקומות, מסעדות, בתי עסק — עם הוראות הגעה ולינקים ל-Waze.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📄</div>
+      <h3>ניתוח מסמכים</h3>
+      <p>שלחו PDF, Excel או תמונה של מסמך — אני אקרא, אסכם ואענה על שאלות.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎥</div>
+      <h3>הורדת וסיכום סרטונים</h3>
+      <p>שלחו לינק מ-YouTube או TikTok — אני אוריד, אסכם, או אתרגם.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔒</div>
+      <h3>פרטיות ואבטחה</h3>
+      <p>המידע שלכם מוצפן ושמור בענן מאובטח. אף אחד לא יכול לראות את השיחות שלכם.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Pricing ── -->
+<section class="pricing" id="pricing">
+  <h2>בחרו מסלול</h2>
+  <p class="sub">ללא הגבלת הודעות. ללא התחייבות. בטלו בכל עת.</p>
+  <div class="plans">
+    <div class="plan">
+      <h3>Basic</h3>
+      <div class="price">99₪<small>/חודש</small></div>
+      <div class="price-note">גישה מיידית</div>
+      <ul>
+        <li><span class="check">✓</span> צ'אט AI ללא הגבלה — טקסט, קול ותמונות</li>
+        <li><span class="check">✓</span> חיפוש מידע בזמן אמת</li>
+        <li><span class="check">✓</span> יצירת תמונות, סטיקרים ומוזיקה</li>
+        <li><span class="check">✓</span> רשימות וניהול משימות</li>
+        <li><span class="check">✓</span> מפות, מקומות וניווט</li>
+        <li><span class="check">✓</span> תרגום ו-QR</li>
+        <li class="disabled"><span class="check">—</span> Gmail, Calendar, Drive</li>
+        <li class="disabled"><span class="check">—</span> זיכרון אישי</li>
+        <li class="disabled"><span class="check">—</span> תזכורות ומעקב הוצאות</li>
+      </ul>
+      <a href="/api/checkout?plan=basic" class="plan-btn basic">הרשמה ל-Basic</a>
+    </div>
+    <div class="plan featured">
+      <div class="plan-badge">מומלץ</div>
+      <h3>Pro</h3>
+      <div class="price">179₪<small>/חודש</small></div>
+      <div class="price-note">כל היכולות, בלי פשרות</div>
+      <ul>
+        <li><span class="check">✓</span> הכל ב-Basic, ללא הגבלה</li>
+        <li><span class="check">✓</span> Gmail, Calendar & Google Drive</li>
+        <li><span class="check">✓</span> זיכרון אישי — Rio זוכר אותך</li>
+        <li><span class="check">✓</span> תזכורות והודעות מתוזמנות</li>
+        <li><span class="check">✓</span> מעקב הוצאות וניתוח קבלות</li>
+        <li><span class="check">✓</span> ניתוח מסמכים (PDF, Excel)</li>
+        <li><span class="check">✓</span> הורדת וסיכום סרטונים</li>
+        <li><span class="check">✓</span> שליחת הודעות והתקשרות בשמך</li>
+        <li><span class="check">✓</span> סיכום יומי, חשבוניות, Slack</li>
+      </ul>
+      <a href="/api/checkout?plan=pro" class="plan-btn pro">הרשמה ל-Pro</a>
+    </div>
+  </div>
+</section>
+
+<!-- ── FAQ ── -->
+<section class="faq">
+  <h2>שאלות נפוצות</h2>
+  <details class="faq-item">
+    <summary>איך מתחילים?</summary>
+    <p>לוחצים על הכפתור, נפתחת שיחה עם Rio בוואטסאפ, ומתחילים לדבר. זהו. בלי אפליקציות, בלי הרשמות ארוכות — תוך שניות אתם בפנים.</p>
+  </details>
+  <details class="faq-item">
+    <summary>מה Rio יודע לעשות?</summary>
+    <p>כמעט הכל: לענות על שאלות, לחפש מידע בזמן אמת, ליצור תמונות ומוזיקה, לנהל יומן ומיילים, לעקוב אחרי הוצאות, להזכיר, לנהל רשימות, להוריד סרטונים, לנווט למקומות ועוד הרבה. והוא לומד כל הזמן דברים חדשים.</p>
+  </details>
+  <details class="faq-item">
+    <summary>האם אפשר לבטל?</summary>
+    <p>כן, בכל עת. אין התחייבות. אפשר לבטל ישירות מהצ'אט עם Rio (פשוט כתבו /billing) או דרך עמוד ניהול החשבון.</p>
+  </details>
+  <details class="faq-item">
+    <summary>האם המידע שלי בטוח?</summary>
+    <p>בהחלט. כל המידע האישי מוצפן בהצפנה צבאית (AES-256). Rio לא שומר שיחות לצמיתות, והגישה ל-Gmail ו-Calendar מתבצעת דרך OAuth2 הרשמי של Google — אתם יכולים לבטל גישה בכל עת.</p>
+  </details>
+  <details class="faq-item">
+    <summary>מה ההבדל בין Basic ל-Pro?</summary>
+    <p>Basic נותן AI ללא הגבלה, חיפוש, יצירת תוכן ורשימות. Pro מוסיף אינטגרציה מלאה עם Google (מייל, יומן, Drive), זיכרון אישי, תזכורות, מעקב הוצאות, ניתוח מסמכים, ושליחת הודעות בשמכם.</p>
+  </details>
+  <details class="faq-item">
+    <summary>Rio מדבר עברית?</summary>
+    <p>כן, בשטף. Rio מדבר עברית ואנגלית ומבין שתי השפות בטקסט, קול ותמונות.</p>
+  </details>
+</section>
+
+<!-- ── Bottom CTA ── -->
+<section class="cta-banner">
+  <h2>מוכנים להכיר את Rio?</h2>
+  <p>תתחילו לדבר איתי עכשיו. חינם, מיידי, ובלי התחייבות.</p>
+  <a href="#" class="hero-cta" id="bottom-cta">
+    <svg viewBox="0 0 24 24" style="width:22px;height:22px;fill:currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+    דברו איתי בוואטסאפ
+  </a>
+</section>
+
+<footer>
+  <a href="/privacy">מדיניות פרטיות</a> &middot; Rio &copy; 2026
+</footer>
+
+<script>
+(async () => {
+  try {
+    const r = await fetch('/api/rio-number');
+    const d = await r.json();
+    if (d.number) {
+      const link = `https://wa.me/${d.number}?text=${encodeURIComponent('היי Rio! אשמח להכיר אותך ולראות מה אתה יודע לעשות 🤖')}`;
+      document.getElementById('hero-cta').href = link;
+      document.getElementById('bottom-cta').href = link;
+    }
+  } catch {}
+})();
+
+document.querySelectorAll('a[href^="/api/checkout"]').forEach(link => {
+  link.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const plan = new URL(link.href, location.origin).searchParams.get('plan');
+    const phone = prompt('הכניסו את מספר הוואטסאפ שלכם (למשל 0521234567):');
+    if (!phone) return;
+    const origText = link.textContent;
+    link.textContent = 'מעבד...';
+    link.style.pointerEvents = 'none';
+    try {
+      const res = await fetch(`/api/checkout?plan=${plan}&phone=${encodeURIComponent(phone)}`);
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else alert(data.error || 'משהו השתבש. נסו שוב.');
+    } catch { alert('משהו השתבש. נסו שוב.'); }
+    finally { link.textContent = origText; link.style.pointerEvents = ''; }
+  });
+});
+</script>
+
+</body>
+</html>
