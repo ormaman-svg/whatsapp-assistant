@@ -60,7 +60,11 @@ async function sendWithRetry(fn, maxRetries = 3) {
  */
 function extractReplyText(response) {
   try {
-    return response.text();
+    let txt = response.text();
+    // Strip THOUGHT blocks (internal reasoning leaked into output)
+    txt = txt.replace(/<thinking>[\s\S]*?<\/antml:thinking>/gi, '').trim();
+    txt = txt.replace(/^THOUGHT[:\s][\s\S]*?(?=\n\S|$)/m, '').trim();
+    return txt;
   } catch (err) {
     const name = err?.constructor?.name || '';
     const isResponseErr = name === 'GoogleGenerativeAIResponseError' || /response.*blocked|text not available/i.test(err.message || '');
@@ -112,7 +116,10 @@ function buildChatHistory(userId) {
       role: entry.role,
       parts: entry.parts.filter((p) => p.text !== undefined),
     }));
-  return all.slice(-MAX_CHAT_TURNS * 2);
+  const sliced = all.slice(-MAX_CHAT_TURNS * 2);
+  // Gemini requires history to start with 'user' role
+  const firstUserIdx = sliced.findIndex(e => e.role === 'user');
+  return firstUserIdx > 0 ? sliced.slice(firstUserIdx) : sliced;
 }
 
 /**
@@ -206,7 +213,10 @@ async function chatWithTools(chat, inputParts, userId, opts = {}) {
     }
   }
 
-  return { text: extractReplyText(response), media: mediaQueue, toolsCalled };
+  let finalText = extractReplyText(response);
+  // Strip internal THOUGHT blocks from user-facing output
+  finalText = finalText.replace(/^THOUGHT[\s\S]*?\n(?=\S)/m, '').trim();
+  return { text: finalText, media: mediaQueue, toolsCalled };
 }
 
 async function handleText(userId, text, opts = {}) {
