@@ -37,6 +37,21 @@ function maskPhone(phone) {
 const DEFAULT_ROUTE_ERROR =
   'Something went wrong. Please try again.\nמשהו השתבש, אנא נסה שוב.';
 
+/** Fallback for errors userFacingRouteError doesn't recognize — still gives the user a concrete hint. */
+function buildGenericError(err) {
+  const m = String(err?.message || '');
+  if (/timeout|ETIMEDOUT|ESOCKETTIMEDOUT/i.test(m)) {
+    return 'The request timed out — try again.\nהבקשה לקחה יותר מדי זמן. נסה שוב.';
+  }
+  if (/ECONNRESET|ECONNREFUSED|network|fetch failed/i.test(m)) {
+    return 'A network error occurred. Please try again.\nשגיאת רשת. נסה שוב עוד רגע.';
+  }
+  if (/WhatsApp not connected/i.test(m)) {
+    return 'WhatsApp connection lost. Reconnecting…\nהחיבור לוואטסאפ אבד. מתחבר מחדש…';
+  }
+  return DEFAULT_ROUTE_ERROR;
+}
+
 /** Turn known upstream failures into a clear WhatsApp reply (Gemini quota/billing is a common case). */
 function userFacingRouteError(err) {
   const m = String(err?.message || '');
@@ -68,6 +83,8 @@ function userFacingRouteError(err) {
 
 const {
   sendText,
+  sendTyping,
+  sendReaction,
   markRead,
   downloadMedia,
   uploadMedia,
@@ -193,13 +210,19 @@ ${state === 'open' ? '<p style="font-size:2em;margin:20px 0">Connected!</p>' :
 
 app.use(apiLimiter);
 
-const processed = new Set();
+// Bounded dedup store — max 2000 entries caps RAM even if setTimeout cleanup is starved under load
+const DEDUP_MAX = 2000;
 const DEDUP_TTL_MS = 5 * 60 * 1000;
+const processed = new Map(); // msgId -> expiry timestamp
 
 function isDuplicate(msgId) {
-  if (processed.has(msgId)) return true;
-  processed.add(msgId);
-  setTimeout(() => processed.delete(msgId), DEDUP_TTL_MS);
+  const now = Date.now();
+  if (processed.has(msgId) && processed.get(msgId) > now) return true;
+  if (processed.size >= DEDUP_MAX) {
+    const oldest = [...processed.entries()].sort((a, b) => a[1] - b[1]).slice(0, Math.floor(DEDUP_MAX / 4));
+    for (const [k] of oldest) processed.delete(k);
+  }
+  processed.set(msgId, now + DEDUP_TTL_MS);
   return false;
 }
 
@@ -268,7 +291,7 @@ async function handleBaileysMessage(m) {
     } else if (raw.imageMessage) {
       msg = { type: 'image', image: { id: m, caption: raw.imageMessage.caption || '' } };
     } else if (raw.audioMessage) {
-      msg = { type: 'audio', audio: { id: m } };
+      msg = { type: 'audio', audio: { id: m }, isForwarded: !!raw.audioMessage.contextInfo?.isForwarded };
     } else if (raw.documentMessage) {
       msg = {
         type: 'document',
@@ -293,6 +316,8 @@ async function handleBaileysMessage(m) {
       return;
     }
 
+    msg.key = m.key;
+
     if (isDuplicate(msgId)) return;
     markRead(m.key).catch(() => {});
 
@@ -314,7 +339,14 @@ async function handleBaileysMessage(m) {
   }
 }
 
+// Heavy request types get a ⏳→✅/❌ reaction so the user sees Rio picked it up, not just typing dots.
+const HEAVY_ACK_TYPES = new Set(['image', 'audio', 'document']);
+
 async function routeMessage(from, msg, user) {
+  const stopTyping = await sendTyping(from).catch(() => async () => {});
+  const wantsAck = HEAVY_ACK_TYPES.has(msg.type) && msg.key;
+  if (wantsAck) sendReaction(from, msg.key, '⏳').catch(() => {});
+
   try {
     const plan = getUserPlan(user)?.name?.toLowerCase() || 'basic';
     // Text path must receive the same plan as image/audio (from getUserPlan), not only user.plan from Firestore.
@@ -342,14 +374,18 @@ async function routeMessage(from, msg, user) {
           'Sorry, I can only handle text, images, voice, and document messages for now.\nאני יכול לטפל בטקסט, תמונות, הודעות קוליות ומסמכים.'
         );
     }
+    if (wantsAck) sendReaction(from, msg.key, '✅').catch(() => {});
   } catch (err) {
+    if (wantsAck) sendReaction(from, msg.key, '❌').catch(() => {});
     const errDetail = err.response?.data
       ? JSON.stringify(err.response.data).substring(0, 300)
       : '';
     const stack = err.stack ? String(err.stack).substring(0, 800) : '';
     console.error(`[route] Error processing ${msg.type} from ${maskPhone(from)}:`, err.message, errDetail, stack || '');
-    const userMsg = userFacingRouteError(err) || DEFAULT_ROUTE_ERROR;
+    const userMsg = userFacingRouteError(err) || buildGenericError(err);
     await sendText(from, userMsg).catch(() => {});
+  } finally {
+    stopTyping().catch(() => {});
   }
 }
 
@@ -376,9 +412,10 @@ function shouldRespondInGroup(msg, rioJid) {
 }
 
 async function routeGroupMessage(from, groupId, msg, contactInfo, rioJid) {
-  try {
-    if (!shouldRespondInGroup(msg, rioJid)) return;
+  if (!shouldRespondInGroup(msg, rioJid)) return;
+  const stopTyping = await sendTyping(groupId).catch(() => async () => {});
 
+  try {
     const senderName = contactInfo?.profile?.name || from;
     const ownerFlag = isAllowed(from);
     const sessionKey = groupKey(groupId);
@@ -420,15 +457,16 @@ async function routeGroupMessage(from, groupId, msg, contactInfo, rioJid) {
         const audioId = msg.audio?.id;
         if (!audioId) return;
         const { buffer, mimeType } = await downloadMedia(audioId);
+        const groupAudioOpts = { isGroup: true, sessionKey, plan: senderPlan, isForwarded: !!msg.isForwarded };
         try {
-          const { textReply, pcmBase64 } = await handleAudioToAudio(from, buffer, mimeType, { isGroup: true, sessionKey, plan: senderPlan });
+          const { textReply, pcmBase64 } = await handleAudioToAudio(from, buffer, mimeType, groupAudioOpts);
           const pcmBuffer = Buffer.from(pcmBase64, 'base64');
           const oggPath = await pcmBufferToOgg(pcmBuffer);
           const media = await uploadMedia(oggPath, 'audio/ogg; codecs=opus');
           await sendGroupAudio(groupId, media);
           cleanFile(oggPath);
         } catch {
-          const textReply = await handleAudioToText(from, buffer, mimeType, { isGroup: true, sessionKey, plan: senderPlan });
+          const textReply = await handleAudioToText(from, buffer, mimeType, groupAudioOpts);
           if (textReply) await sendGroupMessage(groupId, textReply);
         }
         break;
@@ -441,6 +479,8 @@ async function routeGroupMessage(from, groupId, msg, contactInfo, rioJid) {
     console.error(`[group] Error processing ${msg.type} in ${groupId}:`, err.message, errDetail);
     const userMsg = userFacingRouteError(err) || 'Something went wrong. Try again.\nמשהו השתבש, נסו שוב.';
     await sendGroupMessage(groupId, userMsg).catch(() => {});
+  } finally {
+    stopTyping().catch(() => {});
   }
 }
 
@@ -777,7 +817,7 @@ async function onAudio(from, msg, opts = {}) {
   const userPlan = opts.plan !== undefined && opts.plan !== null
     ? opts.plan
     : (opts.user ? opts.user.plan : null);
-  const audioOpts = { isGroup: opts.isGroup || false, isOwner, sessionKey, plan: userPlan };
+  const audioOpts = { isGroup: opts.isGroup || false, isOwner, sessionKey, plan: userPlan, isForwarded: !!msg.isForwarded };
 
   let oggPath = null;
   try {
@@ -1192,6 +1232,43 @@ function startReminderScheduler() {
   console.log(`[reminders] Background scheduler active (every ${REMINDER_POLL_MS / 1000}s)`);
 }
 
+// ---------- Meeting prep: proactive pre-meeting briefings (calendar + email + traffic) ----------
+const { processUpcomingMeetings } = require('./services/meeting-prep');
+const MEETING_PREP_POLL_MS = 5 * 60 * 1000;
+let meetingPrepSchedulerStarted = false;
+
+function startMeetingPrepScheduler() {
+  if (meetingPrepSchedulerStarted) return;
+  meetingPrepSchedulerStarted = true;
+
+  const tick = async () => {
+    if (getConnectionState() !== 'open') return;
+    try {
+      const result = await processUpcomingMeetings();
+      if (result.sent > 0) {
+        console.log(`[meeting-prep] Sent ${result.sent} briefing(s)`);
+      }
+    } catch (err) {
+      console.error('[meeting-prep] Scheduler tick failed:', err.message);
+    }
+  };
+
+  setInterval(tick, MEETING_PREP_POLL_MS);
+  setTimeout(tick, 30_000);
+  console.log(`[meeting-prep] Background scheduler active (every ${MEETING_PREP_POLL_MS / 1000}s)`);
+}
+
+app.get('/cron/meeting-prep', requireAdminToken, async (_req, res) => {
+  try {
+    const result = await processUpcomingMeetings();
+    console.log(`[cron] Meeting prep sent: ${result.sent}`);
+    res.json(result);
+  } catch (err) {
+    console.error('[cron] Meeting prep failed:', err.message);
+    res.status(500).json({ error: 'Meeting prep processing failed' });
+  }
+});
+
 app.get('/cron/reminders', requireAdminToken, async (_req, res) => {
   try {
     const result = await processDueReminders();
@@ -1400,6 +1477,7 @@ app.listen(PORT, async () => {
     await initBaileys(handleBaileysMessage);
     console.log('[startup] Baileys initialized');
     startReminderScheduler();
+    startMeetingPrepScheduler();
   } catch (err) {
     console.error('[startup] Baileys init failed:', err.message);
   }

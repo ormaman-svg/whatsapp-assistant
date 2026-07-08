@@ -54,6 +54,59 @@ async function markRead(msgKey) {
   } catch { /* ignore */ }
 }
 
+/**
+ * Show a "typing…" indicator while Rio processes a reply.
+ * Returns a stopTyping() function — always call it in a finally block.
+ * Best-effort: never throws.
+ */
+async function sendTyping(to, stopAfterMs = 30_000) {
+  const sock = getSocket();
+  if (!sock) return async () => {};
+  const jid = toJid(to);
+  try { await sock.sendPresenceUpdate('composing', jid); } catch { /* ignore */ }
+  let stopped = false;
+  const stopTimer = setTimeout(async () => {
+    if (stopped) return;
+    stopped = true;
+    try { await sock.sendPresenceUpdate('paused', jid); } catch { /* ignore */ }
+  }, stopAfterMs);
+  return async function stopTyping() {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(stopTimer);
+    try { await sock.sendPresenceUpdate('paused', jid); } catch { /* ignore */ }
+  };
+}
+
+/**
+ * React to a specific message with an emoji (or '' to remove the reaction).
+ * Best-effort: never throws — a failed reaction shouldn't break the reply flow.
+ */
+async function sendReaction(to, msgKey, emoji) {
+  const sock = getSocket();
+  if (!sock || !msgKey) return;
+  const jid = toJid(to);
+  try {
+    await sock.sendMessage(jid, { react: { text: emoji, key: msgKey } });
+  } catch (err) {
+    console.error('[whatsapp] Reaction failed:', err.message);
+  }
+}
+
+/**
+ * Send a native WhatsApp poll (single-select by default) for quick confirmations.
+ * options: array of option strings (2-12 items).
+ */
+async function sendPoll(to, question, options, { selectableCount = 1 } = {}) {
+  const sock = getSocket();
+  if (!sock) throw new Error('WhatsApp not connected');
+  const jid = toJid(to);
+  console.log(`[whatsapp] Sending poll to ${maskedJid(jid)}: ${question}`);
+  await sock.sendMessage(jid, {
+    poll: { name: question, values: options, selectableCount },
+  });
+}
+
 async function downloadMedia(baileysMsg) {
   const buffer = await downloadMediaMessage(baileysMsg, 'buffer', {});
   const msg = baileysMsg.message;
@@ -157,6 +210,9 @@ module.exports = {
   toJid,
   fromJid,
   sendText,
+  sendTyping,
+  sendReaction,
+  sendPoll,
   markRead,
   downloadMedia,
   uploadMedia,

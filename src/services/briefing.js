@@ -38,7 +38,8 @@ async function buildBriefing(userId) {
 
   if (await isAuthenticated(userId)) {
     try {
-      const events = await listEvents(userId, {
+      const events = await listEvents({
+        userId,
         timeMin: new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString(),
         timeMax: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString(),
         maxResults: 10,
@@ -47,8 +48,8 @@ async function buildBriefing(userId) {
       if (events?.length) {
         sections.push('\n📅 *היומן שלך היום:*');
         for (const ev of events) {
-          const start = ev.start?.dateTime
-            ? new Date(ev.start.dateTime).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
+          const start = ev.start && ev.start.includes('T')
+            ? new Date(ev.start).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
             : 'כל היום';
           sections.push(`  • ${start} — ${ev.summary || 'ללא כותרת'}`);
         }
@@ -64,7 +65,7 @@ async function buildBriefing(userId) {
       sections.push(`\n📧 *${count} מיילים שלא נקראו*`);
 
       if (count > 0) {
-        const recent = await searchEmails('is:unread', userId, 5);
+        const recent = await searchEmails('is:unread', 5, userId);
         for (const email of (recent || []).slice(0, 5)) {
           sections.push(`  • ${email.from}: ${email.subject}`);
         }

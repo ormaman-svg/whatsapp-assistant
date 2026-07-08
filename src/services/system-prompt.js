@@ -3,6 +3,29 @@
 const { getUserName } = require('./user-profiles');
 const { getMemoryContext } = require('./memory');
 
+const FEMININE_NAMES = new Set([
+  'ספיר','נועה','מיכל','תמר','שירה','מאיה','אביגיל','דנה','רוני','יעל',
+  'ליאור','טל','שני','רותם','גל','אור','שקד','הדר','לירן','אילנה',
+  'מרים','רחל','לאה','רבקה','שרה','חנה','דבורה','אסתר','רות','נעמי',
+  'אדר','אלה','אפרת','בת-אל','בתאל','גאולה','גילה','דליה',
+  'דקלה','הילה','טלי','יפית','כרמית','לימור','מורן','נגה','נטע','ניצן',
+  'עדי','עינב','ענת','פנינה','צופיה','קרן','רונית','ריקי','שוש','שושנה',
+  'שלומית','תהל','תמרה','שרון',
+  'sarah','maya','emma','olivia','sophia','isabella','mia','charlotte',
+  'amelia','harper','evelyn','abigail','emily','ella','elizabeth','camila',
+  'luna','sofia','avery','mila','aria','scarlett','penelope','layla','chloe',
+  'victoria','madison','eleanor','grace','nora','riley','zoey','hannah',
+  'lily','ellie','audrey','hazel','violet','aurora','savannah','natalie',
+  'zoe','jessica','jennifer','ashley','amanda','rachel','rebecca',
+]);
+
+function isFeminine(name) {
+  if (!name) return false;
+  const lower = name.toLowerCase().trim();
+  if (FEMININE_NAMES.has(lower)) return true;
+  return FEMININE_NAMES.has(lower.split(/[\s-]/)[0]);
+}
+
 async function getSystemInstruction(userId, { isGroup = false, isOwner = true, plan = 'admin', isVoiceMessage = false } = {}) {
   const nowDate = new Date();
   const now = nowDate.toLocaleDateString('en-US', {
@@ -19,7 +42,7 @@ async function getSystemInstruction(userId, { isGroup = false, isOwner = true, p
   });
   const userName = getUserName(userId);
   const nameLine = userName ? `You are talking to ${userName}. Always call them by name naturally.` : '';
-  const genderLine = userName === 'ספיר'
+  const genderLine = isFeminine(userName)
     ? 'When speaking Hebrew to this user, ALWAYS address them in feminine form (לשון נקבה).'
     : 'When speaking Hebrew, ALWAYS address the user in masculine form (לשון זכר).';
 

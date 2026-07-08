@@ -3,7 +3,7 @@
 const MAX_HISTORY = 20;
 const MAX_GROUP_HISTORY = 30;
 const SESSION_TTL_MS = 4 * 60 * 60 * 1000;
-const PERSIST_INTERVAL_MS = 30 * 1000;
+const PERSIST_INTERVAL_MS = 15 * 1000; // reduced from 30s → less history lost on restart
 
 const sessions = new Map();
 const dirty = new Set();
@@ -107,6 +107,11 @@ async function persistDirty() {
     }
   }
 }
+
+// Flush on exit so last messages aren't lost on Cloud Run restart/SIGTERM
+function flushOnExit() { persistDirty().catch(() => {}); }
+process.once('SIGTERM', flushOnExit);
+process.once('SIGINT', flushOnExit);
 
 setInterval(persistDirty, PERSIST_INTERVAL_MS);
 

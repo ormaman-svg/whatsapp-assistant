@@ -288,6 +288,10 @@ async function handleAudioToText(userId, audioBuffer, mimeType, opts = {}) {
   const model = await getModel(userId, voiceOpts);
   const chat = model.startChat({ history });
 
+  const promptText = opts.isForwarded
+    ? 'This is a WhatsApp voice message the user FORWARDED to you (someone else recorded it) — they want a quick summary, not a conversation. You CAN hear it — listen carefully (Hebrew or English) and reply with a short summary: 2-4 bullet points covering who is talking about what, and any dates/numbers/action items mentioned. Do NOT say you cannot listen to voice messages.'
+    : 'This is a WhatsApp voice message from the user. You CAN hear it — listen carefully, understand the content (Hebrew or English), and respond helpfully to what they said. Do NOT say you cannot listen to voice messages.';
+
   const parts = [
     {
       inlineData: {
@@ -295,14 +299,11 @@ async function handleAudioToText(userId, audioBuffer, mimeType, opts = {}) {
         mimeType: mimeType || 'audio/ogg; codecs=opus',
       },
     },
-    {
-      text:
-        'This is a WhatsApp voice message from the user. You CAN hear it — listen carefully, understand the content (Hebrew or English), and respond helpfully to what they said. Do NOT say you cannot listen to voice messages.',
-    },
+    { text: promptText },
   ];
 
   const plan = opts.plan || 'admin';
-  addToHistory(sessionKey, 'user', [{ text: '[Voice message]' }]);
+  addToHistory(sessionKey, 'user', [{ text: opts.isForwarded ? '[Forwarded voice message]' : '[Voice message]' }]);
   let { text: reply } = await chatWithTools(chat, parts, userId, { plan });
 
   if (isVoiceCapabilityDenial(reply)) {
