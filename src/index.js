@@ -1473,6 +1473,11 @@ const SERVICE_URL = process.env.SERVICE_URL
 app.listen(PORT, async () => {
   console.log(`Rio is live → ${SERVICE_URL}`);
 
+  if (process.env.DISABLE_BAILEYS === 'true') {
+    console.log('[startup] DISABLE_BAILEYS=true — skipping WhatsApp connection (maintenance mode)');
+    return;
+  }
+
   try {
     await initBaileys(handleBaileysMessage);
     console.log('[startup] Baileys initialized');
