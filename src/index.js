@@ -3,12 +3,26 @@
 require('dotenv').config();
 
 process.on('uncaughtException', (err) => {
-  if (/Unsupported state or unable to authenticate data/.test(err.message)) {
-    console.error('[process] Noise protocol decryption error (non-fatal, ignoring):', err.message);
+  const msg = err && err.message ? String(err.message) : '';
+  if (/Unsupported state or unable to authenticate data/.test(msg)) {
+    console.error('[process] Noise protocol decryption error (non-fatal, ignoring):', msg);
+    return;
+  }
+  // Firestore/gRPC transient errors (e.g. auth-state writes) surface as uncaught
+  // rejections from Baileys' fire-and-forget saveCreds. Crashing on them restarts
+  // the container mid-pairing and prevents the socket from ever reaching 'open'.
+  // gRPC status codes: 4 DEADLINE_EXCEEDED, 14 UNAVAILABLE, 8 RESOURCE_EXHAUSTED.
+  if (/DEADLINE_EXCEEDED|UNAVAILABLE|RESOURCE_EXHAUSTED|Deadline exceeded|firestore|grpc/i.test(msg)) {
+    console.error('[process] Transient Firestore/gRPC error (non-fatal, ignoring):', msg.slice(0, 200));
     return;
   }
   console.error('[process] Uncaught exception:', err);
   process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const msg = reason && reason.message ? String(reason.message) : String(reason);
+  console.error('[process] Unhandled rejection (non-fatal):', msg.slice(0, 200));
 });
 
 const _origInfo = console.info;
