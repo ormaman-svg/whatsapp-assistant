@@ -6,18 +6,21 @@ const { encrypt, decrypt } = require('./crypto');
 const COLLECTION = 'baileys-auth';
 const BAILEYS_USER_ID = '__baileys_auth__';
 
+// Baileys session/pre-key data lives in its own Firestore database, separate from
+// the main app database (users, sessions, reminders, memory, expenses). Pre-keys
+// churn heavily on reconnect loops and can balloon into hundreds of thousands of
+// documents — isolating them means a corrupted auth state can be wiped clean
+// without touching real user data.
+let _db;
 function getDb() {
-  const { Firestore } = require('@google-cloud/firestore');
-  let db;
-  return (() => {
-    if (!db) {
-      db = new Firestore({
-        projectId: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT,
-        databaseId: process.env.FIRESTORE_DATABASE_ID || 'whatsapp-assistant',
-      });
-    }
-    return db;
-  })();
+  if (!_db) {
+    const { Firestore } = require('@google-cloud/firestore');
+    _db = new Firestore({
+      projectId: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT,
+      databaseId: process.env.BAILEYS_FIRESTORE_DATABASE_ID || process.env.FIRESTORE_DATABASE_ID || 'whatsapp-assistant',
+    });
+  }
+  return _db;
 }
 
 function fixKey(key) {
